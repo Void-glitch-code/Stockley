@@ -45,8 +45,18 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
     # --- Price range as a volatility proxy ---
     df["high_low_spread"] = (df["high"] - df["low"]) / df["close"]
 
-    # --- Target: next day's close (what we want to predict) ---
+    # --- Target: next day's close (kept for reference/evaluation) ---
     df["target"] = df["close"].shift(-1)
+
+    # --- Target for training: next day's RETURN, not absolute price ---
+    # Tree-based models (RandomForest etc.) cannot extrapolate beyond the
+    # range of values seen during training -- if a stock trends up/down,
+    # absolute prices in the test period fall outside the training range
+    # and the model's predictions get stuck near the training boundary.
+    # Returns are far more stable regardless of trend direction, so we
+    # train on this instead and reconstruct the price afterward:
+    #   predicted_price = today_close * (1 + predicted_return)
+    df["target_return"] = (df["close"].shift(-1) / df["close"]) - 1
 
     feature_cols = (
         [f"close_lag_{lag}" for lag in LAG_DAYS]
@@ -55,7 +65,7 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
         + ["daily_return", "momentum_5", "volume_roll_mean_5", "high_low_spread"]
     )
 
-    result = df[["date", "close"] + feature_cols + ["target"]].dropna().reset_index(drop=True)
+    result = df[["date", "close"] + feature_cols + ["target", "target_return"]].dropna().reset_index(drop=True)
     return result, feature_cols
 
 
