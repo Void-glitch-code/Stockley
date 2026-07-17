@@ -20,24 +20,54 @@ st.set_page_config(page_title="Stockley", page_icon="📈", layout="wide")
 # THEME TOKENS — warm dark + amber/gold accent
 # Keep these in sync with .streamlit/config.toml (see file alongside this one)
 # ----------------------------------------------------------------------------
-BG          = "#171310"   # warm near-black background
-PANEL       = "#221b16"   # card background — warm dark brown
-PANEL_SOFT  = "#1c1712"   # slightly darker, for nested/inactive elements
-BORDER      = "rgba(255, 200, 120, 0.12)"
-TEXT        = "#f2e9df"
-SUBTEXT     = "#b5a596"
-ACCENT      = "#e0a339"   # amber/gold
-ACCENT_SOFT = "rgba(224, 163, 57, 0.16)"
-GREEN       = "#4caf7d"
-GREEN_BG    = "rgba(76, 175, 125, 0.14)"
-RED         = "#e0684a"
-RED_BG      = "rgba(224, 104, 74, 0.14)"
-GRID_LINE   = "rgba(255, 200, 120, 0.06)"
+BG          = "#050505"
+PANEL       = "rgba(20,20,20,0.85)"
+PANEL_SOFT  = "rgba(12,12,12,0.75)"
+BORDER      = "rgba(255,255,255,0.08)"
+
+TEXT        = "#FFFFFF"
+SUBTEXT     = "#9CA3AF"
+
+ACCENT      = "#00E5FF"
+ACCENT_SOFT = "rgba(0,229,255,0.15)"
+
+GREEN       = "#00FF99"
+GREEN_BG    = "rgba(0,255,153,0.12)"
+
+RED         = "#FF4D6D"
+RED_BG      = "rgba(255,77,109,0.12)"
+
+GRID_LINE   = "rgba(255,255,255,0.04)"
 
 st.markdown(
     f"""
     <style>
-      .stApp {{ background-color: {BG}; }}
+      .stApp {{
+            background:
+                radial-gradient(circle at top left, rgba(0,229,255,0.08), transparent 35%),
+                radial-gradient(circle at bottom right, rgba(139,92,246,0.08), transparent 35%),
+                #050505;
+        }}
+
+        #MainMenu {{visibility:hidden;}}
+        footer {{visibility:hidden;}}
+        header {{visibility:hidden;}}
+
+        .stockley-title {{
+            font-size:36px;
+            font-weight:800;
+            letter-spacing:1px;
+            background: linear-gradient(90deg,#00E5FF,#8B5CF6,#00E5FF);
+            background-size:200% auto;
+            -webkit-background-clip:text;
+            -webkit-text-fill-color:transparent;
+            animation: shine 4s linear infinite;
+        }}
+
+        @keyframes shine {{
+            to {{ background-position:200% center; }}
+        }}
+        
 
       .stockley-header {{ display:flex; align-items:center; gap:14px; margin-bottom: 4px; }}
       .stockley-icon {{ font-size: 30px; }}
@@ -78,6 +108,7 @@ st.markdown(
       .badge-green {{ background: {GREEN_BG}; color: {GREEN}; }}
       .badge-red   {{ background: {RED_BG};   color: {RED}; }}
       .badge-flat  {{ background: {ACCENT_SOFT}; color: {ACCENT}; }}
+      .badge-predicted {{ background: {ACCENT_SOFT}; color: {ACCENT}; font-style: normal; }}
 
       div[data-testid="stExpander"] {{
           background: {PANEL}; border: 1px solid {BORDER}; border-radius: 12px;
@@ -85,7 +116,72 @@ st.markdown(
       div[data-testid="stDataFrame"] {{ border-radius: 10px; overflow: hidden; }}
       div[data-testid="stCaptionContainer"] p {{ color: {SUBTEXT}; }}
       hr {{ border-color: {BORDER}; }}
-    </style>
+    
+      div[data-testid="stVerticalBlock"]:has(> div.stockley-card-marker) {{
+          background: linear-gradient(
+              135deg,
+              rgba(255,255,255,0.06),
+              rgba(255,255,255,0.02)
+          );
+          backdrop-filter: blur(28px);
+          -webkit-backdrop-filter: blur(28px);
+
+          border: 1px solid rgba(255,255,255,0.10);
+          border-radius: 24px;
+
+          box-shadow:
+              0 8px 32px rgba(0,0,0,0.45),
+              inset 0 1px 0 rgba(255,255,255,0.05);
+
+          padding: 24px;
+          transition: all 0.3s ease;
+      }}
+
+      div[data-testid="stVerticalBlock"]:has(> div.stockley-card-marker):hover {{
+          transform: translateY(-6px);
+          border-color: rgba(0,229,255,0.35);
+
+          box-shadow:
+              0 12px 40px rgba(0,0,0,0.60),
+              0 0 25px rgba(0,229,255,0.15),
+              0 0 60px rgba(139,92,246,0.08);
+      }}
+
+      .stat-value {{
+          font-size: 34px !important;
+          font-weight: 800 !important;
+          color: #ffffff !important;
+      }}
+
+      .stat-label {{
+          text-transform: uppercase;
+          letter-spacing: 1.4px;
+          font-size: 11px !important;
+          color: #9CA3AF !important;
+      }}
+
+      .stat-badge {{
+          border: 1px solid rgba(255,255,255,0.08);
+          backdrop-filter: blur(12px);
+      }}
+
+      div[data-testid="stExpander"] {{
+          background: rgba(255,255,255,0.03) !important;
+          backdrop-filter: blur(24px);
+          border-radius: 20px !important;
+          border: 1px solid rgba(255,255,255,0.08) !important;
+      }}
+
+      ::-webkit-scrollbar {{
+          width: 8px;
+      }}
+
+      ::-webkit-scrollbar-thumb {{
+          background: rgba(0,229,255,0.5);
+          border-radius: 20px;
+      }}
+    
+</style>
     """,
     unsafe_allow_html=True,
 )
@@ -149,6 +245,19 @@ def fetch_stock_detail(symbol: str, days: int):
     return resp.json()
 
 
+@st.cache_data(ttl=300)
+def fetch_prediction(symbol: str):
+    """Returns None if no model is trained yet for this symbol, instead of crashing."""
+    try:
+        resp = requests.get(f"{API_BASE}/predict/{symbol}", timeout=10)
+        if resp.status_code == 503:
+            return None  # no trained model yet
+        resp.raise_for_status()
+        return resp.json()
+    except requests.exceptions.RequestException:
+        return None
+
+
 try:
     stocks = fetch_stocks()
 except requests.exceptions.ConnectionError:
@@ -203,6 +312,7 @@ horizon_label = horizon_label or "6 Months"
 days = TIME_HORIZONS[horizon_label]
 
 detail = fetch_stock_detail(selected_symbol, days)
+prediction = fetch_prediction(selected_symbol)
 prices = detail["prices"]
 
 if not prices:
@@ -226,7 +336,7 @@ avg_volume = int(df["volume"].tail(10).mean())
 # ----------------------------------------------------------------------------
 # ROW 2 — 4-column grid of stat cards
 # ----------------------------------------------------------------------------
-c1, c2, c3, c4 = st.columns(4, gap="medium")
+c1, c2, c3, c4, c5 = st.columns(5, gap="medium")
 with c1:
     stat_card("Last Price", f"₹{last_price:,.2f}" if last_price else "N/A", pct_change)
 with c2:
@@ -235,6 +345,22 @@ with c3:
     stat_card("Avg Volume (10d)", f"{avg_volume:,}")
 with c4:
     stat_card("Sector", detail.get("sector") or "N/A")
+with c5:
+    if prediction:
+        stat_card(
+            "Predicted Next Close",
+            f"₹{prediction['predicted_next_close']:,.2f}",
+            prediction["predicted_change_pct"],
+        )
+    else:
+        with st.container(border=True):
+            card_marker()
+            st.markdown(
+                '<div class="stat-label">Predicted Next Close</div>'
+                '<div class="stat-value" style="font-size:15px; color:'
+                f'{SUBTEXT};">Model not trained yet</div>',
+                unsafe_allow_html=True,
+            )
 
 st.markdown('<div style="height:16px"></div>', unsafe_allow_html=True)
 
@@ -261,7 +387,7 @@ with st.container(border=True):
     ]
 
     chart_options = {
-        "height": 400,
+        "height": 650,
         "layout": {"background": {"type": "solid", "color": PANEL}, "textColor": SUBTEXT},
         "grid": {"vertLines": {"color": GRID_LINE}, "horzLines": {"color": GRID_LINE}},
         "rightPriceScale": {"borderColor": BORDER},
@@ -269,24 +395,35 @@ with st.container(border=True):
         "crosshair": {"mode": 0},
     }
     volume_options = {
-        "height": 120,
+        "height": 160,
         "layout": {"background": {"type": "solid", "color": PANEL}, "textColor": SUBTEXT},
         "grid": {"vertLines": {"color": GRID_LINE}, "horzLines": {"color": GRID_LINE}},
         "rightPriceScale": {"borderColor": BORDER},
         "timeScale": {"borderColor": BORDER, "visible": True},
     }
 
+    candlestick_series = {
+        "type": "Candlestick", "data": candle_data,
+        "options": {
+            "upColor": GREEN, "downColor": RED, "borderVisible": False,
+            "wickUpColor": GREEN, "wickDownColor": RED,
+        },
+    }
+    if prediction:
+        candlestick_series["priceLines"] = [{
+            "price": prediction["predicted_next_close"],
+            "color": ACCENT,
+            "lineWidth": 2,
+            "lineStyle": 2,  # dashed
+            "axisLabelVisible": True,
+            "title": "Predicted",
+        }]
+
     renderLightweightCharts(
         [
             {
                 "chart": chart_options,
-                "series": [{
-                    "type": "Candlestick", "data": candle_data,
-                    "options": {
-                        "upColor": GREEN, "downColor": RED, "borderVisible": False,
-                        "wickUpColor": GREEN, "wickDownColor": RED,
-                    },
-                }],
+                "series": [candlestick_series],
             },
             {
                 "chart": volume_options,
