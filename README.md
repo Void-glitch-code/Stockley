@@ -1,4 +1,4 @@
-# Stockley — Full-Fledged Stock Price Prediction App
+# Stockley — Full-Fledged Stock Price Prediction App(In progress)
 ## FastAPI + ML + Docker + React Dashboard
 ### Build Timeline: Now to Mid-August (12 weeks)
 
