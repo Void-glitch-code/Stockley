@@ -1,8 +1,8 @@
 # Stockley — Stock Price Dashboard & Predictor
 
-A stock price tracking and next-day prediction platform for Indian equities (BSE-listed), built as a final-year project.
+A stock price tracking and next-day prediction platform for Indian equities (BSE-listed).
 
-**Status:** In progress — Week 3 of an 8-week build. Core pipeline (data → DB → API → ML → dashboard) is working end to end.
+**Status:** Week 3 complete. Data pipeline, DB, FastAPI backend, ML pipeline (features → training → prediction), and Streamlit dashboard are all working end to end. Moving into Week 4: expanding historical data depth, then deployment.
 
 ---
 
@@ -46,6 +46,7 @@ This deviates from the original 12-week plan in several places, based on real co
 - ❌ Authentication, user accounts, watchlist
 - ❌ LSTM / Prophet models (using scikit-learn instead — see below)
 - ❌ Multi-day (7/14/30-day) forecasting — currently next-day only
+- 🔜 Full multi-year historical data — currently ~100 days via Alpha Vantage free tier; Week 4 plan is a one-time manual backfill from Yahoo Finance (2+ years), then ongoing updates via stooq.com
 
 ---
 
@@ -58,6 +59,8 @@ This deviates from the original 12-week plan in several places, based on real co
 **Predicting returns, not absolute price.** Initial models trained directly on next-day closing price performed *worse* than a naive "tomorrow = today" baseline on every single stock. Root cause: tree-based models (Random Forest, Gradient Boosting) cannot extrapolate beyond the range of values seen during training — since stock prices trend over time, the test period's prices fell outside the training range, and predictions got stuck near the training boundary. Fixed by training on next-day **return** (% change) instead of absolute price, then reconstructing price as `today_close × (1 + predicted_return)`. This is standard practice in quantitative finance and meaningfully improved results.
 
 **Model selection per stock.** Rather than committing to one algorithm, `train.py` trains Ridge, Random Forest, and Gradient Boosting for each stock and keeps whichever performs best on a held-out, time-ordered test set (never randomly shuffled, to avoid leaking future data into training).
+
+**Why not LSTM?** Considered and deliberately ruled out. LSTMs need far more training examples than the ~80 usable rows per stock available here to learn meaningful temporal structure — with this little data, a deep model is more likely to overfit noise than a simpler, more sample-efficient model like Ridge or Random Forest. Combined with the finding that near-term price movement on liquid large-caps is close to a random walk (see baseline comparison below), the bottleneck here is signal, not model capacity — so a bigger model wouldn't help. This is a deliberate scope decision, not a skipped step.
 
 **React → Streamlit.** Given the compressed timeline, Streamlit delivers a fully interactive, good-looking dashboard in a fraction of the development time a React + TailwindCSS build would take, while still demonstrating real frontend/UX decisions (custom theming, grid layout, live API integration).
 
@@ -129,9 +132,11 @@ API docs available at `http://localhost:8000/docs` (Swagger UI).
 
 ---
 
-## Next Steps
+## Next Steps (Week 4)
 
-- Surface predictions directly in the Streamlit dashboard
-- Set up a recurring data refresh (daily fetch → retrain) as history accumulates past the current ~100-day window
-- Multi-day forecasting (currently next-day only)
+- **Day 0 — Expand historical data depth:** manually export 2+ years of daily OHLCV data from Yahoo Finance's website (not the API) for all 10 tracked stocks, and one-time import into `historical_prices`. Alpha Vantage's free tier only gave ~100 days going forward (see "Key Decisions" above); this backfill gives the model a genuine multi-year training window instead of ~63 usable rows, which should make the Ridge/RF/GBM comparison far more meaningful.
+- **Ongoing updates via stooq.com:** once backfilled, switch the daily refresh job from Alpha Vantage to stooq.com (free, no API key, no rate limits) to keep all 10 stocks current going forward.
+- Re-run `python -m app.ml.train` after the backfill — with hundreds of rows instead of 63, results should be re-evaluated from scratch rather than compared directly to the current ~100-day numbers.
+- Surface predictions directly in the Streamlit dashboard (done)
 - Deployment (Railway for backend, Streamlit Community Cloud for frontend)
+- Optional, time-permitting: confidence intervals on predictions, walk-forward backtesting, model performance dashboard
