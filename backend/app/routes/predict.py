@@ -1,6 +1,7 @@
 import os
 import joblib
 import pandas as pd
+from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -12,13 +13,21 @@ router = APIRouter(prefix="/api/predict", tags=["predict"])
 
 MODELS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "ml", "saved_models")
 
+# If the model's training data is older than this many days vs. today's date,
+# flag the prediction as potentially stale (model hasn't seen recent prices).
+STALENESS_THRESHOLD_DAYS = 5
+
 
 @router.get("/{symbol}")
 def predict_next_close(symbol: str, db: Session = Depends(get_db)):
     """
     Predicts tomorrow's closing price for a stock, using its saved model.
-    Returns 404 if the stock doesn't exist, 503 if no trained model is
-    available yet (run `python -m app.ml.train` first).
+
+    Errors:
+      404 - stock doesn't exist in the database
+      503 - no trained model yet, not enough price history, or the saved
+            model file is unreadable/incompatible (e.g. feature set changed
+            since it was trained -- just retrain in that case)
     """
     symbol = symbol.upper()
     stock = db.query(Stock).filter(Stock.symbol == symbol).first()
@@ -32,8 +41,15 @@ def predict_next_close(symbol: str, db: Session = Depends(get_db)):
             detail=f"No trained model available for '{symbol}' yet. Run `python -m app.ml.train` first.",
         )
 
-    bundle = joblib.load(model_path)
-    model, feature_cols = bundle["model"], bundle["feature_cols"]
+    try:
+        bundle = joblib.load(model_path)
+        model, feature_cols = bundle["model"], bundle["feature_cols"]
+    except Exception:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Saved model for '{symbol}' could not be loaded (it may be corrupted or "
+                   f"out of date). Re-run `python -m app.ml.train` to regenerate it.",
+        )
 
     rows = (
         db.query(HistoricalPrice)
@@ -41,6 +57,13 @@ def predict_next_close(symbol: str, db: Session = Depends(get_db)):
         .order_by(HistoricalPrice.date)
         .all()
     )
+    if not rows:
+        raise HTTPException(
+            status_code=503,
+            detail=f"No price history in the database for '{symbol}' yet. "
+                   f"Run `python -m app.utils.data_fetcher` first.",
+        )
+
     raw_df = pd.DataFrame([{
         "date": r.date, "open": r.open, "high": r.high,
         "low": r.low, "close": r.close, "volume": r.volume,
@@ -50,18 +73,51 @@ def predict_next_close(symbol: str, db: Session = Depends(get_db)):
     if latest_features is None:
         raise HTTPException(
             status_code=503,
-            detail=f"Not enough price history yet for '{symbol}' to compute a prediction.",
+            detail=f"Not enough price history yet for '{symbol}' to compute a prediction "
+                   f"(need at least ~21 trading days for rolling features).",
         )
 
-    X = latest_features[feature_cols].to_frame().T
-    predicted_return = float(model.predict(X)[0])
+    try:
+        X = latest_features[feature_cols].to_frame().T
+        predicted_return = float(model.predict(X)[0])
+    except (KeyError, ValueError):
+        raise HTTPException(
+            status_code=503,
+            detail=f"Model for '{symbol}' expects different features than what's currently "
+                   f"available (likely trained on an older version of the feature pipeline). "
+                   f"Re-run `python -m app.ml.train` to regenerate it.",
+        )
+
     today_close = float(latest_features["close"])
     predicted_price = today_close * (1 + predicted_return)
 
-    return {
+    # --- Staleness check: is this model trained on reasonably recent data? ---
+    is_stale = False
+    last_data_date = bundle.get("last_data_date")
+    if last_data_date:
+        try:
+            trained_on_date = datetime.strptime(last_data_date, "%Y-%m-%d").date()
+            latest_available_date = latest_features["date"]
+            if hasattr(latest_available_date, "date"):
+                latest_available_date = latest_available_date.date()
+            gap_days = (latest_available_date - trained_on_date).days
+            is_stale = gap_days > STALENESS_THRESHOLD_DAYS
+        except (ValueError, TypeError):
+            pass  # if metadata is missing/malformed (older model file), skip the check
+
+    response = {
         "symbol": symbol,
         "as_of_date": str(latest_features["date"]),
         "last_close": round(today_close, 2),
         "predicted_next_close": round(predicted_price, 2),
         "predicted_change_pct": round(predicted_return * 100, 2),
+        "model_type": bundle.get("model_name", "unknown"),
+        "model_trained_at": bundle.get("trained_at"),
+        "model_is_stale": is_stale,
     }
+    if is_stale:
+        response["stale_warning"] = (
+            "This model was trained on older data than what's now available. "
+            "Consider re-running `python -m app.ml.train` to refresh it."
+        )
+    return response

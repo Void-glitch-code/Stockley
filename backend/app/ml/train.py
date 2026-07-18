@@ -11,6 +11,7 @@ import os
 import joblib
 import numpy as np
 import pandas as pd
+from datetime import datetime
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 from sklearn.linear_model import Ridge
 from sklearn.metrics import mean_absolute_error, mean_squared_error
@@ -99,7 +100,13 @@ def train_one_stock(symbol: str, raw_df: pd.DataFrame) -> dict | None:
     # Save the trained model + the feature column order (needed at prediction time)
     os.makedirs(MODELS_DIR, exist_ok=True)
     model_path = os.path.join(MODELS_DIR, f"{symbol}.joblib")
-    joblib.dump({"model": model, "feature_cols": feature_cols}, model_path)
+    joblib.dump({
+        "model": model,
+        "feature_cols": feature_cols,
+        "model_name": best["model_name"],
+        "trained_at": datetime.utcnow().isoformat(),
+        "last_data_date": str(features_df["date"].max()),
+    }, model_path)
 
     print(f"  {symbol}: train={len(train_df)} rows, test={len(test_df)} rows | best model: {best['model_name']}")
     print(f"    Model:    MAE={mae:.2f}  RMSE={rmse:.2f}  MAPE={mape:.2f}%")
