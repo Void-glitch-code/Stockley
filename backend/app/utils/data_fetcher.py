@@ -23,6 +23,7 @@ BASE_URL = "https://www.alphavantage.co/query"
 
 # Alpha Vantage uses ".BSE" suffix for Indian stocks (not ".NS")
 STOCK_SYMBOLS = {
+    # --- Indian equities (BSE) -- 10 calls ---
     "RELIANCE.BSE": ("Reliance Industries", "Energy"),
     "TCS.BSE": ("Tata Consultancy Services", "IT"),
     "HDFCBANK.BSE": ("HDFC Bank", "Finance"),
@@ -33,6 +34,20 @@ STOCK_SYMBOLS = {
     "BHARTIARTL.BSE": ("Bharti Airtel", "Telecom"),
     "ITC.BSE": ("ITC Limited", "FMCG"),
     "KOTAKBANK.BSE": ("Kotak Mahindra Bank", "Finance"),
+
+    # --- Global mega-caps via Alpha Vantage -- 5 calls ---
+    # Plain tickers -- Alpha Vantage supports US-listed stocks natively, no suffix needed.
+    # Total: 10 + 5 = 15 calls/day, well under the 25/day free-tier cap.
+    # Apple, NVIDIA, Meta, Intel, AMD are handled separately via manual CSV
+    # backfill instead (see import_manual_csv.py) -- swapped groups from the
+    # original plan since those 5 got downloaded manually by mistake, and
+    # swapping which group is "API" vs "manual" doesn't change anything
+    # (5+5 either way), so no re-downloading was needed.
+    "TSLA": ("Tesla", "Consumer Discretionary"),
+    "ORCL": ("Oracle", "Technology"),
+    "MSFT": ("Microsoft", "Technology"),
+    "JPM": ("JPMorgan Chase", "Finance"),
+    "GOOGL": ("Alphabet", "Technology"),
 }
 
 
