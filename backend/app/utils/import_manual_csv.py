@@ -33,10 +33,10 @@ IMPORT_DIR = os.path.join(
 
 # symbol -> (filename without extension, display name, sector)
 MANUAL_STOCKS = {
-    "Apple": ("AAPL", "Apple", "Technology"),
-    "Nvidia": ("NVDA", "NVIDIA", "Technology"),
-    "Meta": ("META", "Meta Platforms", "Technology"),
-    "Intel": ("INTC", "Intel", "Technology"),
+    "AAPL": ("AAPL", "Apple", "Technology"),
+    "NVDA": ("NVDA", "NVIDIA", "Technology"),
+    "META": ("META", "Meta Platforms", "Technology"),
+    "INTC": ("INTC", "Intel", "Technology"),
     "AMD": ("AMD", "Advanced Micro Devices", "Technology"),
 }
 
