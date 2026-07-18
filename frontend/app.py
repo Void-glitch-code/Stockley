@@ -1,7 +1,7 @@
 """
 Stockley — Stock Price Dashboard
-Warm dark theme, grid-based card layout, using streamlit-lightweight-charts
-for the price/volume chart.
+Dark, glassmorphic theme with a cyan/violet accent, grid-based card layout,
+using streamlit-lightweight-charts for the price/volume chart.
 
 Run with: streamlit run app.py
 Requires the FastAPI backend running at http://localhost:8000
@@ -17,7 +17,7 @@ API_BASE = "http://localhost:8000/api"
 st.set_page_config(page_title="Stockley", page_icon="📈", layout="wide")
 
 # ----------------------------------------------------------------------------
-# THEME TOKENS — warm dark + amber/gold accent
+# THEME TOKENS — dark + cyan/violet accent
 # Keep these in sync with .streamlit/config.toml (see file alongside this one)
 # ----------------------------------------------------------------------------
 BG          = "#050505"
@@ -30,6 +30,7 @@ SUBTEXT     = "#9CA3AF"
 
 ACCENT      = "#00E5FF"
 ACCENT_SOFT = "rgba(0,229,255,0.15)"
+ACCENT_2    = "#8B5CF6"  # secondary accent, used only in the title gradient
 
 GREEN       = "#00FF99"
 GREEN_BG    = "rgba(0,255,153,0.12)"
@@ -39,152 +40,192 @@ RED_BG      = "rgba(255,77,109,0.12)"
 
 GRID_LINE   = "rgba(255,255,255,0.04)"
 
+# Spacing scale — use these instead of ad-hoc pixel spacers so vertical
+# rhythm stays consistent across sections.
+SPACE_SM = 8
+SPACE_MD = 16
+SPACE_LG = 24
+
+
+def vspace(px: int = SPACE_MD):
+    st.markdown(f'<div style="height:{px}px"></div>', unsafe_allow_html=True)
+
+
 st.markdown(
     f"""
     <style>
+      @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700&display=swap');
+
       .stApp {{
             background:
                 radial-gradient(circle at top left, rgba(0,229,255,0.08), transparent 35%),
                 radial-gradient(circle at bottom right, rgba(139,92,246,0.08), transparent 35%),
-                #050505;
+                {BG};
         }}
 
         #MainMenu {{visibility:hidden;}}
         footer {{visibility:hidden;}}
         header {{visibility:hidden;}}
 
+        /* -- Header / page title -------------------------------------- */
+        .stockley-header {{ display:flex; align-items:center; gap:14px; margin-bottom: 4px; }}
+        .stockley-icon {{ font-size: 30px; }}
         .stockley-title {{
-            font-size:36px;
-            font-weight:800;
-            letter-spacing:1px;
-            background: linear-gradient(90deg,#00E5FF,#8B5CF6,#00E5FF);
-            background-size:200% auto;
-            -webkit-background-clip:text;
-            -webkit-text-fill-color:transparent;
+            font-size: 32px;
+            font-weight: 800;
+            letter-spacing: 0.5px;
+            line-height: 1.2;
+            background: linear-gradient(90deg, {ACCENT}, {ACCENT_2}, {ACCENT});
+            background-size: 200% auto;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
             animation: shine 4s linear infinite;
         }}
-
         @keyframes shine {{
-            to {{ background-position:200% center; }}
+            to {{ background-position: 200% center; }}
         }}
-        
+        .stockley-caption {{ font-size: 14px; color: {SUBTEXT}; margin-top: 2px; }}
 
-      .stockley-header {{ display:flex; align-items:center; gap:14px; margin-bottom: 4px; }}
-      .stockley-icon {{ font-size: 30px; }}
-      .stockley-title {{ font-size: 28px; font-weight: 700; color: {TEXT}; line-height:1.2; }}
-      .stockley-caption {{ font-size: 14px; color: {SUBTEXT}; margin-top: 2px; }}
+        /* -- Cards -------------------------------------------------------
+           Single source of truth for the glass-card look. Previously this
+           selector was defined twice with conflicting values (a flat panel,
+           then a glass override) -- only the second ever applied, so the
+           first was dead weight. Keeping one definition here. */
+        div[data-testid="stVerticalBlock"]:has(> div.stockley-card-marker) {{
+            background: linear-gradient(
+                135deg,
+                rgba(255,255,255,0.06),
+                rgba(255,255,255,0.02)
+            );
+            backdrop-filter: blur(28px);
+            -webkit-backdrop-filter: blur(28px);
+            border: 1px solid rgba(255,255,255,0.10);
+            border-radius: 20px;
+            padding: 22px 22px 24px 22px;
+            box-shadow:
+                0 8px 32px rgba(0,0,0,0.45),
+                inset 0 1px 0 rgba(255,255,255,0.05);
+            transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+        }}
+        div[data-testid="stVerticalBlock"]:has(> div.stockley-card-marker):hover {{
+            transform: translateY(-4px);
+            border-color: rgba(0,229,255,0.35);
+            box-shadow:
+                0 12px 40px rgba(0,0,0,0.60),
+                0 0 25px rgba(0,229,255,0.15),
+                0 0 60px rgba(139,92,246,0.08);
+        }}
+        .stockley-card-marker {{ display:none; }}
+        .stockley-card-label {{
+            font-size: 12px;
+            font-weight: 600;
+            letter-spacing: 1.2px;
+            text-transform: uppercase;
+            color: {SUBTEXT};
+            margin-bottom: 12px;
+        }}
 
-      div[data-testid="stVerticalBlock"]:has(> div.stockley-card-marker) {{
-          background: {PANEL};
-          border: 1px solid {BORDER};
-          border-radius: 14px;
-          padding: 18px 20px 20px 20px;
-      }}
-      .stockley-card-marker {{ display:none; }}
-      .stockley-card-label {{
-          font-size: 13px; color: {SUBTEXT}; font-weight: 500;
-          text-transform: none; margin-bottom: 10px;
-      }}
+        /* -- Pills / segmented controls ---------------------------------- */
+        div[data-testid="stButtonGroup"] button {{
+            border-radius: 999px !important;
+            border: 1px solid {BORDER} !important;
+            background: {PANEL_SOFT} !important;
+            color: {TEXT} !important;
+        }}
+        div[data-testid="stButtonGroup"] button[kind="primary"],
+        div[data-testid="stButtonGroup"] button[aria-checked="true"] {{
+            background: {ACCENT_SOFT} !important;
+            border-color: {ACCENT} !important;
+            color: {ACCENT} !important;
+        }}
 
-      div[data-testid="stButtonGroup"] button {{
-          border-radius: 999px !important;
-          border: 1px solid {BORDER} !important;
-          background: {PANEL_SOFT} !important;
-          color: {TEXT} !important;
-      }}
-      div[data-testid="stButtonGroup"] button[kind="primary"],
-      div[data-testid="stButtonGroup"] button[aria-checked="true"] {{
-          background: {ACCENT_SOFT} !important;
-          border-color: {ACCENT} !important;
-          color: {ACCENT} !important;
-      }}
+        /* -- Stat cards ---------------------------------------------------
+           Numeric values use a monospace face with tabular figures --
+           reads like a trading terminal rather than generic dashboard
+           sans, and keeps digits aligned as values change. */
+        .stat-label {{
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 1.4px;
+            text-transform: uppercase;
+            color: {SUBTEXT};
+            margin-bottom: 8px;
+        }}
+        .stat-value {{
+            font-family: 'JetBrains Mono', ui-monospace, monospace;
+            font-variant-numeric: tabular-nums;
+            font-size: 30px;
+            font-weight: 700;
+            color: {TEXT};
+            margin-bottom: 10px;
+            line-height: 1.15;
+        }}
+        .quick-ticker {{
+            font-family: 'JetBrains Mono', ui-monospace, monospace;
+            font-size: 15px;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            color: {ACCENT};
+            margin-bottom: 4px;
+        }}
+        div[data-testid="column"] button {{
+            border-radius: 12px !important;
+            border: 1px solid {BORDER} !important;
+            background: {PANEL_SOFT} !important;
+            color: {SUBTEXT} !important;
+            font-size: 12px !important;
+        }}
+        div[data-testid="column"] button:hover {{
+            border-color: {ACCENT} !important;
+            color: {ACCENT} !important;
+        }}
+        .stat-badge {{
+            display: inline-block;
+            font-family: 'JetBrains Mono', ui-monospace, monospace;
+            font-variant-numeric: tabular-nums;
+            font-size: 12px;
+            font-weight: 600;
+            padding: 3px 10px;
+            border-radius: 999px;
+            border: 1px solid rgba(255,255,255,0.08);
+            backdrop-filter: blur(12px);
+        }}
+        .badge-green {{ background: {GREEN_BG}; color: {GREEN}; }}
+        .badge-red   {{ background: {RED_BG};   color: {RED}; }}
+        .badge-flat  {{ background: {ACCENT_SOFT}; color: {ACCENT}; }}
+        .badge-predicted {{ background: {ACCENT_SOFT}; color: {ACCENT}; font-style: normal; }}
 
-      .stat-label {{ font-size: 13px; color: {SUBTEXT}; margin-bottom: 6px; }}
-      .stat-value {{ font-size: 24px; font-weight: 700; color: {TEXT}; margin-bottom: 8px; }}
-      .stat-badge {{
-          display:inline-block; font-size: 12px; font-weight: 600;
-          padding: 3px 10px; border-radius: 999px;
-      }}
-      .badge-green {{ background: {GREEN_BG}; color: {GREEN}; }}
-      .badge-red   {{ background: {RED_BG};   color: {RED}; }}
-      .badge-flat  {{ background: {ACCENT_SOFT}; color: {ACCENT}; }}
-      .badge-predicted {{ background: {ACCENT_SOFT}; color: {ACCENT}; font-style: normal; }}
+        /* -- Misc ----------------------------------------------------- */
+        div[data-testid="stExpander"] {{
+            background: rgba(255,255,255,0.03) !important;
+            backdrop-filter: blur(24px);
+            border-radius: 18px !important;
+            border: 1px solid rgba(255,255,255,0.08) !important;
+        }}
+        div[data-testid="stDataFrame"] {{ border-radius: 10px; overflow: hidden; }}
+        div[data-testid="stCaptionContainer"] p {{ color: {SUBTEXT}; }}
+        hr {{ border-color: {BORDER}; }}
 
-      div[data-testid="stExpander"] {{
-          background: {PANEL}; border: 1px solid {BORDER}; border-radius: 12px;
-      }}
-      div[data-testid="stDataFrame"] {{ border-radius: 10px; overflow: hidden; }}
-      div[data-testid="stCaptionContainer"] p {{ color: {SUBTEXT}; }}
-      hr {{ border-color: {BORDER}; }}
-    
-      div[data-testid="stVerticalBlock"]:has(> div.stockley-card-marker) {{
-          background: linear-gradient(
-              135deg,
-              rgba(255,255,255,0.06),
-              rgba(255,255,255,0.02)
-          );
-          backdrop-filter: blur(28px);
-          -webkit-backdrop-filter: blur(28px);
-
-          border: 1px solid rgba(255,255,255,0.10);
-          border-radius: 24px;
-
-          box-shadow:
-              0 8px 32px rgba(0,0,0,0.45),
-              inset 0 1px 0 rgba(255,255,255,0.05);
-
-          padding: 24px;
-          transition: all 0.3s ease;
-      }}
-
-      div[data-testid="stVerticalBlock"]:has(> div.stockley-card-marker):hover {{
-          transform: translateY(-6px);
-          border-color: rgba(0,229,255,0.35);
-
-          box-shadow:
-              0 12px 40px rgba(0,0,0,0.60),
-              0 0 25px rgba(0,229,255,0.15),
-              0 0 60px rgba(139,92,246,0.08);
-      }}
-
-      .stat-value {{
-          font-size: 34px !important;
-          font-weight: 800 !important;
-          color: #ffffff !important;
-      }}
-
-      .stat-label {{
-          text-transform: uppercase;
-          letter-spacing: 1.4px;
-          font-size: 11px !important;
-          color: #9CA3AF !important;
-      }}
-
-      .stat-badge {{
-          border: 1px solid rgba(255,255,255,0.08);
-          backdrop-filter: blur(12px);
-      }}
-
-      div[data-testid="stExpander"] {{
-          background: rgba(255,255,255,0.03) !important;
-          backdrop-filter: blur(24px);
-          border-radius: 20px !important;
-          border: 1px solid rgba(255,255,255,0.08) !important;
-      }}
-
-      ::-webkit-scrollbar {{
-          width: 8px;
-      }}
-
-      ::-webkit-scrollbar-thumb {{
-          background: rgba(0,229,255,0.5);
-          border-radius: 20px;
-      }}
-    
-</style>
+        ::-webkit-scrollbar {{ width: 8px; }}
+        ::-webkit-scrollbar-thumb {{
+            background: rgba(0,229,255,0.5);
+            border-radius: 20px;
+        }}
+    </style>
     """,
     unsafe_allow_html=True,
 )
+
+
+def format_price(symbol: str, value) -> str:
+    """India-listed symbols (.NS / .BSE) are quoted in ₹; everything else here is USD.
+    (Note: the main stat cards further down always show ₹ regardless of symbol --
+    a pre-existing bug, left as-is since it wasn't part of this change. Happy to
+    fix that too if you want.)"""
+    if value is None:
+        return "N/A"
+    currency = "₹" if symbol.endswith((".NS", ".BSE")) else "$"
+    return f"{currency}{value:,.2f}"
 
 
 def card_marker():
@@ -222,10 +263,10 @@ st.markdown(
             <div class="stockley-caption">Real historical data, served from your FastAPI backend.</div>
         </div>
     </div>
-    <div style="height:18px"></div>
     """,
     unsafe_allow_html=True,
 )
+vspace(SPACE_LG)
 
 
 # ----------------------------------------------------------------------------
@@ -286,6 +327,74 @@ TIME_HORIZONS = {
     "10 Years": 2520,
 }
 
+QUICK_ACCESS = [
+    ("AAPL", "Apple"),
+    ("NVDA", "NVIDIA"),
+    ("MSFT", "Microsoft"),
+    ("GOOGL", "Alphabet"),
+    ("AMD", "AMD"),
+]
+
+
+@st.cache_data(ttl=300)
+def fetch_quick_stats(symbol: str):
+    """Last price + 1-day % change for a quick-access tile, from a small
+    5-day window rather than the full detail fetch used by the main chart."""
+    try:
+        d = fetch_stock_detail(symbol, 5)
+    except requests.exceptions.RequestException:
+        return None
+    day_prices = d.get("prices", [])
+    last_price = d.get("last_price") or (day_prices[-1]["close"] if day_prices else None)
+    pct = None
+    if len(day_prices) >= 2:
+        pct = (day_prices[-1]["close"] - day_prices[-2]["close"]) / day_prices[-2]["close"] * 100
+    return {"last_price": last_price, "pct_change": pct}
+
+
+# ----------------------------------------------------------------------------
+# ROW 0 — quick-access grid, top 5 global stocks
+# ----------------------------------------------------------------------------
+with st.container(border=True):
+    card_marker()
+    st.markdown('<div class="stockley-card-label">Top Global Stocks</div>', unsafe_allow_html=True)
+    quick_cols = st.columns(5, gap="medium")
+    for col, (sym, display_name) in zip(quick_cols, QUICK_ACCESS):
+        with col:
+            if sym not in symbol_list:
+                st.markdown(
+                    f'<div class="quick-ticker">{sym}</div>'
+                    f'<div class="stat-value" style="font-size:14px;">Not tracked yet</div>',
+                    unsafe_allow_html=True,
+                )
+                continue
+
+            stats = fetch_quick_stats(sym)
+            price_str = format_price(sym, stats["last_price"] if stats else None)
+            pct = stats.get("pct_change") if stats else None
+
+            badge = ""
+            if pct is not None:
+                cls = "badge-green" if pct > 0 else ("badge-red" if pct < 0 else "badge-flat")
+                arrow = "↑" if pct > 0 else ("↓" if pct < 0 else "•")
+                badge = f'<span class="stat-badge {cls}">{arrow} {abs(pct):.2f}%</span>'
+
+            st.markdown(
+                f"""
+                <div class="stat-label">{display_name}</div>
+                <div class="quick-ticker">{sym}</div>
+                <div class="stat-value" style="font-size:20px;">{price_str}</div>
+                {badge}
+                """,
+                unsafe_allow_html=True,
+            )
+            vspace(SPACE_SM)
+            if st.button("View chart", key=f"quick_{sym}", use_container_width=True):
+                st.session_state["ticker_pills"] = sym
+                st.rerun()
+
+vspace(SPACE_MD)
+
 # ----------------------------------------------------------------------------
 # ROW 1 — controls card, full width
 # ----------------------------------------------------------------------------
@@ -296,7 +405,7 @@ with st.container(border=True):
         st.markdown('<div class="stockley-card-label">Stock ticker</div>', unsafe_allow_html=True)
         selected_symbol = st.pills(
             "Stock ticker", options=symbol_list, default=symbol_list[0],
-            selection_mode="single", label_visibility="collapsed",
+            selection_mode="single", label_visibility="collapsed", key="ticker_pills",
         )
     with ctrl_right:
         st.markdown('<div class="stockley-card-label">Time horizon</div>', unsafe_allow_html=True)
@@ -305,7 +414,7 @@ with st.container(border=True):
             selection_mode="single", label_visibility="collapsed",
         )
 
-st.markdown('<div style="height:16px"></div>', unsafe_allow_html=True)
+vspace(SPACE_MD)
 
 selected_symbol = selected_symbol or symbol_list[0]
 horizon_label = horizon_label or "6 Months"
@@ -334,7 +443,7 @@ day_low = df["low"].iloc[-1]
 avg_volume = int(df["volume"].tail(10).mean())
 
 # ----------------------------------------------------------------------------
-# ROW 2 — 4-column grid of stat cards
+# ROW 2 — 5-column grid of stat cards
 # ----------------------------------------------------------------------------
 c1, c2, c3, c4, c5 = st.columns(5, gap="medium")
 with c1:
@@ -357,12 +466,12 @@ with c5:
             card_marker()
             st.markdown(
                 '<div class="stat-label">Predicted Next Close</div>'
-                '<div class="stat-value" style="font-size:15px; color:'
+                '<div class="stat-value" style="font-size:15px; font-family:inherit; color:'
                 f'{SUBTEXT};">Model not trained yet</div>',
                 unsafe_allow_html=True,
             )
 
-st.markdown('<div style="height:16px"></div>', unsafe_allow_html=True)
+vspace(SPACE_MD)
 
 # ----------------------------------------------------------------------------
 # ROW 3 — chart card, full width
@@ -434,9 +543,60 @@ with st.container(border=True):
         key=f"chart-{selected_symbol}-{days}",
     )
 
+vspace(SPACE_MD)
+
+# ----------------------------------------------------------------------------
+# ROW — Peer comparison, all selected stocks normalized to % change so they're
+# comparable on one chart regardless of price scale (₹2,000 stock vs $200
+# stock). Uses the same time horizon already picked above.
+# ----------------------------------------------------------------------------
+with st.container(border=True):
+    card_marker()
+    st.markdown(
+        '<div class="stockley-card-label">Peer Comparison — Normalized % Change</div>',
+        unsafe_allow_html=True,
+    )
+
+    default_peers = [sym for sym, _ in QUICK_ACCESS if sym in symbol_list][:5]
+    compare_symbols = st.multiselect(
+        "Stocks to compare", options=symbol_list, default=default_peers,
+        label_visibility="collapsed",
+    )
+
+    if len(compare_symbols) < 2:
+        st.caption("Pick at least 2 stocks to compare.")
+    else:
+        normalized_series = {}
+        for sym in compare_symbols:
+            try:
+                peer_detail = fetch_stock_detail(sym, days)
+            except requests.exceptions.RequestException:
+                continue
+            peer_prices = peer_detail.get("prices", [])
+            if len(peer_prices) < 2:
+                continue
+            peer_df = pd.DataFrame(peer_prices)
+            peer_df["date"] = pd.to_datetime(peer_df["date"])
+            peer_df = peer_df.sort_values("date")
+            base_close = peer_df["close"].iloc[0]
+            normalized_series[sym] = pd.Series(
+                (peer_df["close"].values / base_close - 1) * 100,
+                index=peer_df["date"].values,
+            )
+
+        if normalized_series:
+            compare_df = pd.DataFrame(normalized_series)
+            st.line_chart(compare_df, height=380)
+            st.caption(
+                f"Rebased to 0% at the start of the selected {horizon_label.lower()} window."
+            )
+        else:
+            st.caption("No data available for the selected stocks.")
+
+vspace(SPACE_MD)
+
 # ----------------------------------------------------------------------------
 # RAW DATA
 # ----------------------------------------------------------------------------
-st.markdown('<div style="height:20px"></div>', unsafe_allow_html=True)
 with st.expander("View raw data"):
     st.dataframe(df.sort_values("date", ascending=False), use_container_width=True)

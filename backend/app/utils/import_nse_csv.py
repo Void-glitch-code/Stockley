@@ -40,7 +40,7 @@ NSE_STOCKS = {
     "ICICIBANK_data": ("ICICIBANK.NS", "ICICI Bank", "Finance"),
     "HINDU_data": ("HINDUNILVR.NS", "Hindustan Unilever", "FMCG"),
     "SBIN_data": ("SBIN.NS", "State Bank of India", "Finance"),
-    "BHARTIARTL_data": ("BHARTIARTL.NS", "Bharti Airtel", "Telecom"),
+    "AIRTEL_data": ("BHARTIARTL.NS", "Bharti Airtel", "Telecom"),
     "ITC_data": ("ITC.NS", "ITC Limited", "FMCG"),
     "KOTAK_data": ("KOTAKBANK.NS", "Kotak Mahindra Bank", "Finance"),
 }
