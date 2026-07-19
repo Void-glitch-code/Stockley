@@ -27,6 +27,16 @@ MIN_ROWS_REQUIRED = 30    # skip stocks that don't have enough data yet
 MAX_CV_SPLITS = 4         # cap on time-series CV folds for model selection
 MIN_ROWS_PER_FOLD = 12    # need at least this many rows per CV fold to be meaningful
 
+# Shrinkage factors to blend the model's predicted return toward the naive
+# baseline (which is equivalent to a predicted return of exactly 0). alpha=1.0
+# means "trust the model fully"; alpha=0.0 means "ignore the model, use the
+# baseline"; values in between shrink the model's prediction toward zero.
+# This is a standard variance-reduction technique for noisy regression
+# targets -- if the model's return predictions are directionally OK but
+# noisy, shrinking them toward zero often reduces error even though it never
+# "sees" a genuinely different pattern.
+SHRINKAGE_ALPHAS = [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]
+
 # Candidate models to try per stock. With very little training data (as few
 # as ~60-80 rows here), a simpler, more regularized model like Ridge often
 # generalizes better than a complex Random Forest, which can overfit noise
@@ -57,36 +67,44 @@ def load_price_history(db, stock_id: int) -> pd.DataFrame:
     } for r in rows])
 
 
-def select_best_model(X_train: pd.DataFrame, y_train: pd.Series) -> tuple[str, dict]:
+def select_best_model_and_alpha(train_df: pd.DataFrame, feature_cols: list) -> tuple[str, float, dict]:
     """
-    Picks the best candidate model using time-series cross-validation
-    WITHIN the training set only. The held-out test set is never touched
-    here -- this is the fix for the previous version, which picked
-    "best model" by lowest MAE *on the test set*, which is a form of
-    leakage: it silently tunes model choice to the exact data you later
-    report performance on, inflating "beats baseline" results with noise
-    (especially damaging here since test sets are only 16-45 rows).
+    Picks the best (model, shrinkage_alpha) combination using time-series
+    cross-validation WITHIN the training set only -- the held-out test set
+    is never touched here. Evaluation is done in price-space (not
+    return-space) since that's what we actually care about and report.
 
-    Returns (best_model_name, {model_name: avg_cv_mae}) for logging.
+    Returns (best_model_name, best_alpha, {(model_name, alpha): avg_cv_mae})
+    for logging.
     """
-    n_rows = len(X_train)
+    n_rows = len(train_df)
     n_splits = min(MAX_CV_SPLITS, max(2, n_rows // MIN_ROWS_PER_FOLD))
     tscv = TimeSeriesSplit(n_splits=n_splits)
 
-    cv_scores = {name: [] for name in CANDIDATE_MODELS}
-    for fold_train_idx, fold_val_idx in tscv.split(X_train):
-        X_fold_train, X_fold_val = X_train.iloc[fold_train_idx], X_train.iloc[fold_val_idx]
-        y_fold_train, y_fold_val = y_train.iloc[fold_train_idx], y_train.iloc[fold_val_idx]
+    cv_scores = {(name, a): [] for name in CANDIDATE_MODELS for a in SHRINKAGE_ALPHAS}
+
+    for fold_train_idx, fold_val_idx in tscv.split(train_df):
+        fold_train = train_df.iloc[fold_train_idx]
+        fold_val = train_df.iloc[fold_val_idx]
+        X_fold_train, y_fold_train = fold_train[feature_cols], fold_train["target_return"]
+        X_fold_val = fold_val[feature_cols]
+        y_fold_val_price = fold_val["target"]
+        val_close = fold_val["close"].values
 
         for name, make_model in CANDIDATE_MODELS.items():
             model = make_model()
             model.fit(X_fold_train, y_fold_train)
-            preds = model.predict(X_fold_val)
-            cv_scores[name].append(mean_absolute_error(y_fold_val, preds))
+            predicted_returns = model.predict(X_fold_val)
 
-    avg_scores = {name: float(np.mean(scores)) for name, scores in cv_scores.items()}
-    best_name = min(avg_scores, key=avg_scores.get)
-    return best_name, avg_scores
+            for alpha in SHRINKAGE_ALPHAS:
+                shrunk_returns = alpha * predicted_returns
+                predicted_prices = val_close * (1 + shrunk_returns)
+                mae = mean_absolute_error(y_fold_val_price, predicted_prices)
+                cv_scores[(name, alpha)].append(mae)
+
+    avg_scores = {key: float(np.mean(scores)) for key, scores in cv_scores.items()}
+    best_name, best_alpha = min(avg_scores, key=avg_scores.get)
+    return best_name, best_alpha, avg_scores
 
 
 def train_one_stock(symbol: str, raw_df: pd.DataFrame) -> dict | None:
@@ -114,15 +132,16 @@ def train_one_stock(symbol: str, raw_df: pd.DataFrame) -> dict | None:
     naive_rmse = np.sqrt(mean_squared_error(y_test_price, naive_preds))
     naive_mape = float(np.mean(np.abs((y_test_price.values - naive_preds) / y_test_price.values)) * 100)
 
-    # --- Pick the best model via CV on the training set only ---
-    best_name, cv_scores = select_best_model(X_train, y_train)
+    # --- Pick the best (model, shrinkage_alpha) combo via CV on training data only ---
+    best_name, best_alpha, cv_scores = select_best_model_and_alpha(train_df, feature_cols)
 
     # --- Fit the chosen model on the FULL training set, evaluate ONCE on test ---
     model = CANDIDATE_MODELS[best_name]()
     model.fit(X_train, y_train)
 
     predicted_returns = model.predict(X_test)
-    predicted_prices = test_df["close"].values * (1 + predicted_returns)
+    shrunk_returns = best_alpha * predicted_returns  # blend toward baseline (alpha=0 = pure baseline)
+    predicted_prices = test_df["close"].values * (1 + shrunk_returns)
 
     mae = mean_absolute_error(y_test_price, predicted_prices)
     rmse = np.sqrt(mean_squared_error(y_test_price, predicted_prices))
@@ -135,21 +154,22 @@ def train_one_stock(symbol: str, raw_df: pd.DataFrame) -> dict | None:
         "model": model,
         "feature_cols": feature_cols,
         "model_name": best_name,
-        "cv_scores": cv_scores,
+        "shrinkage_alpha": best_alpha,
+        "cv_scores": {f"{name}_alpha{a}": score for (name, a), score in cv_scores.items()},
         "trained_at": datetime.utcnow().isoformat(),
         "last_data_date": str(features_df["date"].max()),
     }, model_path)
 
-    cv_summary = ", ".join(f"{name}={score:.4f}" for name, score in sorted(cv_scores.items(), key=lambda kv: kv[1]))
+    best_combo_score = cv_scores[(best_name, best_alpha)]
     print(f"  {symbol}: train={len(train_df)} rows, test={len(test_df)} rows | "
-          f"best model (by CV): {best_name}")
-    print(f"    CV return-MAE by model: {cv_summary}")
+          f"best (by CV): {best_name}, shrinkage_alpha={best_alpha} (cv_mae={best_combo_score:.2f})")
     print(f"    Model:    MAE={mae:.2f}  RMSE={rmse:.2f}  MAPE={mape:.2f}%")
     print(f"    Baseline: MAE={naive_mae:.2f}  RMSE={naive_rmse:.2f}  MAPE={naive_mape:.2f}%")
     beats_baseline = mae < naive_mae
     print(f"    -> Model {'BEATS' if beats_baseline else 'does NOT beat'} the naive baseline")
 
-    return {"symbol": symbol, "model_name": best_name, "mae": mae, "rmse": rmse, "mape": mape,
+    return {"symbol": symbol, "model_name": best_name, "shrinkage_alpha": best_alpha,
+            "mae": mae, "rmse": rmse, "mape": mape,
             "naive_mae": naive_mae, "naive_mape": naive_mape,
             "beats_baseline": beats_baseline,
             "train_rows": len(train_df), "test_rows": len(test_df)}

@@ -79,7 +79,12 @@ def predict_next_close(symbol: str, db: Session = Depends(get_db)):
 
     try:
         X = latest_features[feature_cols].to_frame().T
-        predicted_return = float(model.predict(X)[0])
+        raw_predicted_return = float(model.predict(X)[0])
+        # Apply the same shrinkage-toward-baseline blend that was validated
+        # via CV during training -- serving the raw model output here would
+        # be inconsistent with what train.py actually evaluated and reported.
+        shrinkage_alpha = bundle.get("shrinkage_alpha", 1.0)  # default 1.0 for older model files
+        predicted_return = shrinkage_alpha * raw_predicted_return
     except (KeyError, ValueError):
         raise HTTPException(
             status_code=503,
@@ -112,6 +117,7 @@ def predict_next_close(symbol: str, db: Session = Depends(get_db)):
         "predicted_next_close": round(predicted_price, 2),
         "predicted_change_pct": round(predicted_return * 100, 2),
         "model_type": bundle.get("model_name", "unknown"),
+        "shrinkage_alpha": shrinkage_alpha,
         "model_trained_at": bundle.get("trained_at"),
         "model_is_stale": is_stale,
     }
