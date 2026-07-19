@@ -28,9 +28,12 @@ A full-stack stock price dashboard and next-day price predictor for 30 stocks ac
 backend/
   app/
     ml/
-      features.py       # feature engineering (lags, rolling stats, momentum)
-      train.py           # trains + evaluates one model per stock
-      saved_models/      # one .joblib file per stock
+      features.py           # feature engineering (lags, rolling stats, momentum)
+      train.py               # trains + evaluates one regression model per stock
+      train_direction.py     # trains + evaluates one up/down direction classifier per stock
+      backtest.py             # walk-forward backtest (multiple folds) for both, run after training
+      saved_models/           # one .joblib file per stock (regression)
+      saved_models_direction/ # one .joblib file per stock (direction)
     utils/
       import_nse_csv.py     # one-time import for manually downloaded NSE CSVs
       import_manual_csv.py  # one-time import for manually downloaded global CSVs
@@ -55,11 +58,22 @@ NSE and BSE listings for the same company (e.g. `RELIANCE.NS` vs `RELIANCE.BSE`)
 
 Each stock gets its own model, evaluated with a **time-based train/test split** (never shuffled — shuffling time series data leaks the future into training). The target is next-day *return*, not absolute price, since tree-based models can't extrapolate past the price range they were trained on.
 
-**Every model is benchmarked against a naive baseline** ("tomorrow's close = today's close"). This matters because daily stock returns are close to a random walk — that's a foundational result in finance, not a flaw in this codebase. A model that doesn't beat the naive baseline on a given stock isn't necessarily broken; it may just mean there's no exploitable signal in OHLCV history alone for that stock over that period.
+**Every model is benchmarked against a naive baseline** — "tomorrow's close = today's close" for the regression model, and the **majority class in the training data** (not a 50/50 coin flip) for the direction classifier. This matters because daily stock returns are close to a random walk — that's a foundational result in finance, not a flaw in this codebase. A model that doesn't beat the naive baseline on a given stock isn't necessarily broken; it may just mean there's no exploitable signal in OHLCV history alone for that stock over that period.
 
-Current results: **the model beats the naive baseline on roughly 5–10 of 30 stocks**, depending on the run, with average MAPE close to (and sometimes slightly worse than) the baseline's. That's the expected range for this task, not a bug.
+**Headline result — walk-forward backtest** (`backtest.py`), the most trustworthy number in this project since it's averaged across up to 5 sequential train/test windows per stock rather than one:
 
-**Model selection is done via time-series cross-validation on the training set only** — an earlier version of this pipeline picked the "best" of three candidate models by lowest error *on the test set itself*, which is a subtle form of leakage: it tunes model choice to the exact data later reported as the result, inflating the "beats baseline" count with noise (test sets here are only 16–45 rows). Fixing that dropped the reported win count, which is the correct direction — the earlier number was optimistic, not the current one.
+| | Stocks beating baseline | Avg metric (model vs. baseline) |
+|---|---|---|
+| Regression (next-day close) | 6/30 | MAE 12.03 vs. 11.92 |
+| Direction (up/down) | 11/30 | Accuracy 0.507 vs. 0.517 |
+
+Read those two rows together, not separately: direction "wins" on more individual stocks, but its *average* accuracy is still slightly below baseline — meaning the wins on some stocks are being offset by losses on others, not a genuine net edge. Fold-to-fold spread (MAE std ≈2.69, accuracy std ≈0.064) is large enough that several of the individual "beats baseline" results aren't reliable from one window to the next.
+
+**Conclusion: across 30 stocks, two target formulations, and a proper walk-forward evaluation, there's no consistent, exploitable signal in daily OHLCV history for next-day price or direction.** That's not a failed project — a rigorous negative result, arrived at honestly, is the actual point here. Predicting daily stock movement from price history alone is close to the hardest version of this problem you could pick, and the evidence here is consistent with markets pricing that information in efficiently.
+
+**Two methodology notes worth calling out on their own:**
+- **Model selection is done via time-series cross-validation on the training set only.** An earlier version of this pipeline picked the "best" of several candidates by lowest error *on the test set itself* — a subtle form of leakage that tunes model choice to the exact data later reported as the result, inflating "beats baseline" counts with noise (test sets here are as small as 16–45 rows). Fixing that lowered the reported win count, which was the correct direction: the earlier number was optimistic, not this one.
+- **The walk-forward backtest exists because even the leak-free single-split evaluation is still just one noisy sample per stock.** Running the same evaluation across multiple sequential windows and reporting the spread, not just the mean, is what actually distinguishes "this stock has a real edge" from "this stock got lucky once."
 
 ## Setup
 
@@ -76,7 +90,9 @@ cp .env.example .env         # fill in your DB connection string + Alpha Vantage
 python init_db.py
 python -m app.utils.import_nse_csv
 python -m app.utils.import_manual_csv
-python -m app.ml.train
+python -m app.ml.train              # regression models
+python -m app.ml.train_direction    # direction classifiers
+python -m app.ml.backtest           # walk-forward evaluation of both (optional, slower)
 uvicorn app.main:app --reload
 
 # frontend (separate terminal)
@@ -91,7 +107,7 @@ The frontend expects the backend running at `http://localhost:8000`.
 
 - Two NSE tickers (`HINDUNILVR.NS`, `ITC.NS`) currently have shorter price history than the rest, since their source CSVs covered a narrower date range — models for these are trained on less data than the others.
 - Free-tier Alpha Vantage access caps automated fetching at 10 BSE + 5 global tickers; the rest rely on manual CSV re-download to stay current.
-- Predictions are next-day close only. Given how close daily returns are to a random walk, a longer prediction horizon (e.g. 5-day) or a directional (up/down) classification target would likely be a more honest and more learnable problem — worth exploring next.
+- Both next-day close (regression) and next-day direction (classification) are implemented; neither shows a consistent edge over baseline in the walk-forward backtest (see Results above). A longer prediction horizon (e.g. 5-day) hasn't been tried yet and might behave differently, since it's a somewhat different question than next-day movement.
 
 ## License
 
