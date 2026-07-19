@@ -12,6 +12,7 @@ from app.ml.features import build_latest_features
 router = APIRouter(prefix="/api/predict", tags=["predict"])
 
 MODELS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "ml", "saved_models")
+DIRECTION_MODELS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "ml", "saved_models_direction")
 
 # If the model's training data is older than this many days vs. today's date,
 # flag the prediction as potentially stale (model hasn't seen recent prices).
@@ -127,3 +128,95 @@ def predict_next_close(symbol: str, db: Session = Depends(get_db)):
             "Consider re-running `python -m app.ml.train` to refresh it."
         )
     return response
+
+
+@router.get("/{symbol}/direction")
+def predict_direction(symbol: str, db: Session = Depends(get_db)):
+    """
+    Predicts whether tomorrow's close will be UP or DOWN (not the exact
+    price -- see the base /predict/{symbol} endpoint for that). Uses a
+    separate classifier trained by `python -m app.ml.train_direction`.
+
+    IMPORTANT CONTEXT (surfaced in the response, not just this docstring):
+    Individual-stock accuracy at this data scale is noisy -- test sets are
+    as small as 16-45 rows per stock. The pooled accuracy across all stocks
+    (~53% vs ~50% baseline, as of the last full training run) is a more
+    trustworthy signal than any single stock's number. This endpoint
+    returns the model's own historical accuracy/baseline alongside the
+    prediction so the caller isn't given a bare, unqualified "UP"/"DOWN".
+    """
+    symbol = symbol.upper()
+    stock = db.query(Stock).filter(Stock.symbol == symbol).first()
+    if stock is None:
+        raise HTTPException(status_code=404, detail=f"Stock '{symbol}' not found")
+
+    model_path = os.path.join(DIRECTION_MODELS_DIR, f"{symbol}.joblib")
+    if not os.path.exists(model_path):
+        raise HTTPException(
+            status_code=503,
+            detail=f"No trained direction model for '{symbol}' yet. "
+                   f"Run `python -m app.ml.train_direction` first.",
+        )
+
+    try:
+        bundle = joblib.load(model_path)
+        model, feature_cols = bundle["model"], bundle["feature_cols"]
+    except Exception:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Saved direction model for '{symbol}' could not be loaded. "
+                   f"Re-run `python -m app.ml.train_direction` to regenerate it.",
+        )
+
+    rows = (
+        db.query(HistoricalPrice)
+        .filter(HistoricalPrice.stock_id == stock.id)
+        .order_by(HistoricalPrice.date)
+        .all()
+    )
+    if not rows:
+        raise HTTPException(
+            status_code=503,
+            detail=f"No price history in the database for '{symbol}' yet.",
+        )
+
+    raw_df = pd.DataFrame([{
+        "date": r.date, "open": r.open, "high": r.high,
+        "low": r.low, "close": r.close, "volume": r.volume,
+    } for r in rows])
+
+    latest_features = build_latest_features(raw_df)
+    if latest_features is None:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Not enough price history yet for '{symbol}' to compute a prediction.",
+        )
+
+    try:
+        X = latest_features[feature_cols].to_frame().T
+        predicted_class = int(model.predict(X)[0])
+        # predict_proba isn't guaranteed for every sklearn classifier config,
+        # so fall back gracefully if it's unavailable rather than crashing.
+        try:
+            confidence = float(model.predict_proba(X)[0][predicted_class])
+        except (AttributeError, IndexError):
+            confidence = None
+    except (KeyError, ValueError):
+        raise HTTPException(
+            status_code=503,
+            detail=f"Direction model for '{symbol}' expects different features than what's "
+                   f"currently available. Re-run `python -m app.ml.train_direction`.",
+        )
+
+    return {
+        "symbol": symbol,
+        "as_of_date": str(latest_features["date"]),
+        "predicted_direction": "up" if predicted_class == 1 else "down",
+        "confidence": round(confidence, 3) if confidence is not None else None,
+        "model_type": bundle.get("model_name", "unknown"),
+        "model_trained_at": bundle.get("trained_at"),
+        "caveat": (
+            "Per-stock accuracy at this data scale is noisy (small test sets). "
+            "Treat this as a slight statistical lean, not a confident forecast."
+        ),
+    }
