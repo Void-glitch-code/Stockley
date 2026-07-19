@@ -24,16 +24,22 @@ BASE_URL = "https://www.alphavantage.co/query"
 # Alpha Vantage uses ".BSE" suffix for Indian stocks (not ".NS")
 STOCK_SYMBOLS = {
     # --- Indian equities (BSE) -- 10 calls ---
-    "RELIANCE.BSE": ("Reliance Industries", "Energy"),
-    "TCS.BSE": ("Tata Consultancy Services", "IT"),
-    "HDFCBANK.BSE": ("HDFC Bank", "Finance"),
-    "INFY.BSE": ("Infosys", "IT"),
-    "ICICIBANK.BSE": ("ICICI Bank", "Finance"),
-    "HINDUNILVR.BSE": ("Hindustan Unilever", "FMCG"),
-    "SBIN.BSE": ("State Bank of India", "Finance"),
-    "BHARTIARTL.BSE": ("Bharti Airtel", "Telecom"),
-    "ITC.BSE": ("ITC Limited", "FMCG"),
-    "KOTAKBANK.BSE": ("Kotak Mahindra Bank", "Finance"),
+    # Deliberately DIFFERENT companies from the 10 .NS stocks (manually
+    # backfilled via NSE, see import_nse_csv.py) -- the original list had
+    # the same 10 companies on both exchanges, which double-counts rather
+    # than adding real coverage (BSE/NSE prices track closely via
+    # arbitrage). This set gives 20 genuinely distinct Indian companies.
+    "LT.BSE": ("Larsen & Toubro", "Infrastructure"),
+    "BAJFINANCE.BSE": ("Bajaj Finance", "Finance"),
+    "MARUTI.BSE": ("Maruti Suzuki", "Automotive"),
+    "ASIANPAINT.BSE": ("Asian Paints", "Consumer"),
+    "TITAN.BSE": ("Titan Company", "Consumer"),
+    "SUNPHARMA.BSE": ("Sun Pharmaceutical", "Pharma"),
+    "WIPRO.BSE": ("Wipro", "IT"),
+    "AXISBANK.BSE": ("Axis Bank", "Finance"),
+    "NTPC.BSE": ("NTPC", "Energy"),
+    "HCLTECH.BSE": ("HCL Technologies", "IT"),  # replaced TATAMOTORS.BSE -- also rejected by
+                                                  # Alpha Vantage ("Invalid API call"), same as JIOFIN.BSE
 
     # --- Global mega-caps via Alpha Vantage -- 5 calls ---
     # Plain tickers -- Alpha Vantage supports US-listed stocks natively, no suffix needed.
