@@ -2,6 +2,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.routes import stocks, predict
+from app.routes import stocks, predict, auth
+...
+
 
 app = FastAPI(
     title="Stockley API",
@@ -21,6 +24,7 @@ app.add_middleware(
 
 app.include_router(stocks.router)
 app.include_router(predict.router)
+app.include_router(auth.router)
 
 
 @app.get("/")
