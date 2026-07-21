@@ -1,6 +1,6 @@
 from datetime import date
 from pydantic import BaseModel, ConfigDict
-
+from pydantic import BaseModel, EmailStr
 
 class StockOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -25,3 +25,17 @@ class HistoricalPriceOut(BaseModel):
 
 class StockDetailOut(StockOut):
     prices: list[HistoricalPriceOut] = []
+
+class UserCreate(BaseModel):
+    email:EmailStr
+    password:str
+
+class UserOut(BaseModel):
+    id:int
+    email:EmailStr
+    created_at:date
+
+class Token(BaseModel):
+    access_token:str
+    token_type:str = "bearer"
+
