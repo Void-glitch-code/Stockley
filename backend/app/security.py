@@ -22,11 +22,13 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 24 hours
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
+
 def _truncate_to_bcrypt_limit(password: str) -> str:
     """bcrypt only uses the first 72 bytes of a password. Older bcrypt
     versions truncated silently; bcrypt>=4.0 raises a ValueError instead --
     so we truncate ourselves here to get consistent behavior either way,
     and to make sure hash_password and verify_password always agree."""
+    
     return password.encode("utf-8")[:72].decode("utf-8", errors="ignore")
 
 
