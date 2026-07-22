@@ -63,11 +63,7 @@ st.markdown(
                 {BG};
         }}
 
-        #MainMenu {{visibility:hidden;}}
-        footer {{visibility:hidden;}}
-        header {{visibility:hidden;}}
-
-        /* -- Header / page title -------------------------------------- */
+       /* -- Header / page title -------------------------------------- */
         .stockley-header {{ display:flex; align-items:center; gap:14px; margin-bottom: 4px; }}
         .stockley-icon {{ font-size: 30px; }}
         .stockley-title {{
