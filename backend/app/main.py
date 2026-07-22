@@ -1,8 +1,9 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routes import stocks, predict
+
 from app.routes import stocks, predict, auth
+from app.routes import stocks, predict, auth, market
 ...
 
 
@@ -25,7 +26,7 @@ app.add_middleware(
 app.include_router(stocks.router)
 app.include_router(predict.router)
 app.include_router(auth.router)
-
+app.include_router(market.router)
 
 @app.get("/")
 def root():
