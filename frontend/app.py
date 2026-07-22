@@ -299,6 +299,17 @@ def fetch_prediction(symbol: str):
         return None
 
 
+@st.cache_data(ttl=300)
+def fetch_trending():
+    """Top gainers/losers across all tracked stocks, from GET /api/market/trending."""
+    try:
+        resp = requests.get(f"{API_BASE}/market/trending", timeout=10)
+        resp.raise_for_status()
+        return resp.json()
+    except requests.exceptions.RequestException:
+        return None
+
+
 try:
     stocks = fetch_stocks()
 except requests.exceptions.ConnectionError:
@@ -592,6 +603,84 @@ with st.container(border=True):
             )
         else:
             st.caption("No data available for the selected stocks.")
+
+vspace(SPACE_MD)
+
+# ----------------------------------------------------------------------------
+# ROW — Market Movers, top gainers/losers from GET /api/market/trending
+# ----------------------------------------------------------------------------
+with st.container(border=True):
+    card_marker()
+    st.markdown(
+        '<div class="stockley-card-label">Market Movers — Today\'s Top Gainers & Losers</div>',
+        unsafe_allow_html=True,
+    )
+
+    trending = fetch_trending()
+
+    if not trending:
+        st.caption("Trending data unavailable — check the backend is running and /api/market/trending is up.")
+    else:
+        gainers = trending.get("gainers", [])
+        losers = trending.get("losers", [])
+
+        mv_left, mv_right = st.columns(2, gap="large")
+
+        with mv_left:
+            st.markdown(
+                f'<div class="stat-label" style="color:{GREEN};">Top Gainers</div>',
+                unsafe_allow_html=True,
+            )
+            if not gainers:
+                st.caption("No gainers to show.")
+            for item in gainers[:5]:
+                sym = item["symbol"]
+                price_str = format_price(sym, item.get("price"))
+                pct = item.get("pct_change", 0.0)
+                st.markdown(
+                    f"""
+                    <div style="display:flex; justify-content:space-between; align-items:center;
+                                padding:10px 0; border-bottom:1px solid {BORDER};">
+                        <div>
+                            <div class="quick-ticker">{sym}</div>
+                            <div class="stockley-caption">{item.get("name", "")}</div>
+                        </div>
+                        <div style="text-align:right;">
+                            <div class="stat-value" style="font-size:16px; margin-bottom:2px;">{price_str}</div>
+                            <span class="stat-badge badge-green">↑ {abs(pct):.2f}%</span>
+                        </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+        with mv_right:
+            st.markdown(
+                f'<div class="stat-label" style="color:{RED};">Top Losers</div>',
+                unsafe_allow_html=True,
+            )
+            if not losers:
+                st.caption("No losers to show.")
+            for item in losers[:5]:
+                sym = item["symbol"]
+                price_str = format_price(sym, item.get("price"))
+                pct = item.get("pct_change", 0.0)
+                st.markdown(
+                    f"""
+                    <div style="display:flex; justify-content:space-between; align-items:center;
+                                padding:10px 0; border-bottom:1px solid {BORDER};">
+                        <div>
+                            <div class="quick-ticker">{sym}</div>
+                            <div class="stockley-caption">{item.get("name", "")}</div>
+                        </div>
+                        <div style="text-align:right;">
+                            <div class="stat-value" style="font-size:16px; margin-bottom:2px;">{price_str}</div>
+                            <span class="stat-badge badge-red">↓ {abs(pct):.2f}%</span>
+                        </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
 
 vspace(SPACE_MD)
 
